@@ -5,11 +5,11 @@ import random
 def euclidean_distance(city1, city2):
     """
     Calculate Euclidean distance between two cities
-    
+
     city = (x, y)
     """
     return math.sqrt(
-    (city1[0] - city2[0]) ** 2 + (city1[1] - city2[1]) ** 2
+        (city1[0] - city2[0]) ** 2 + (city1[1] - city2[1]) ** 2
     )
 
 
@@ -154,6 +154,109 @@ def randomized_nearest_neighbor_top_k(
 
         # Randomly choose from them
         _, next_city = rng.choice(top_k)
+
+        tour.append(next_city)
+
+        visited[next_city] = True
+        current_city = next_city
+
+    tour_length = calculate_tour_length(
+        tour,
+        distance_matrix
+    )
+
+    return tour, tour_length
+
+# =========================================================
+# VERSION 2A
+# Random starting city
+# =========================================================
+
+
+def randomized_start_nearest_neighbor(cities, seed=None):
+    """
+    Standard nearest neighbor but with a randomly selected
+    starting city.
+    """
+
+    rng = random.Random(seed)
+
+    start_city = rng.randrange(len(cities))
+
+    return nearest_neighbor(
+        cities,
+        start_city=start_city
+    )
+
+
+# =========================================================
+# VERSION 2C
+# Distance-weighted Randomized NN
+# =========================================================
+
+def randomized_nearest_neighbor_weighted(
+    cities,
+    seed=None,
+    random_start=True
+):
+    """
+    Distance-weighted randomized nearest neighbor.
+
+    Closer cities receive higher probability but the
+    closest city is not always selected.
+
+    Probability is proportional to:
+
+        1 / distance
+    """
+
+    rng = random.Random(seed)
+
+    n = len(cities)
+
+    if n == 0:
+        return [], 0.0
+
+    distance_matrix = create_distance_matrix(cities)
+
+    if random_start:
+        start_city = rng.randrange(n)
+    else:
+        start_city = 0
+
+    visited = [False] * n
+
+    visited[start_city] = True
+
+    tour = [start_city]
+
+    current_city = start_city
+
+    epsilon = 1e-12
+
+    for _ in range(n - 1):
+
+        candidates = []
+        weights = []
+
+        for city in range(n):
+
+            if not visited[city]:
+
+                distance = distance_matrix[current_city][city]
+
+                candidates.append(city)
+
+                # Closer cities get larger probability
+                weights.append(
+                    1.0 / (distance + epsilon)
+                )
+
+        next_city = rng.choices(
+            candidates,
+            weights=weights,
+            k=1
+        )[0]
 
         tour.append(next_city)
 

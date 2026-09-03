@@ -51,3 +51,47 @@ def generate_clustered(
         cities.append((x, y))
 
     return cities
+
+
+def load_tsplib(filename):
+    """
+    Load a simple TSPLIB EUC_2D instance.
+
+    Expected format contains:
+
+        NODE_COORD_SECTION
+        1 x y
+        2 x y
+        ...
+        EOF
+    """
+
+    cities = []
+
+    reading_coordinates = False
+
+    with open(filename, "r") as file:
+
+        for line in file:
+
+            line = line.strip()
+
+            if line == "NODE_COORD_SECTION":
+                reading_coordinates = True
+                continue
+
+            if line == "EOF":
+                break
+
+            if reading_coordinates:
+
+                parts = line.split()
+
+                if len(parts) >= 3:
+
+                    x = float(parts[1])
+                    y = float(parts[2])
+
+                    cities.append((x, y))
+
+    return cities
