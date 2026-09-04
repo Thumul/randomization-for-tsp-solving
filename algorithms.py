@@ -51,18 +51,16 @@ def calculate_tour_length(tour, distance_matrix):
 # Deterministic Nearest Neighbor
 # =========================================================
 
-def nearest_neighbor(cities, start_city=0):
+def nearest_neighbor(distance_matrix, start_city=0):
     """
     Deterministic Nearest Neighbor TSP heuristic.
     At each step, select the closest unvisited city.
     """
 
-    n = len(cities)
+    n = len(distance_matrix)
 
     if n == 0:
         return [], 0.0
-
-    distance_matrix = create_distance_matrix(cities)
 
     visited = [False] * n
 
@@ -105,7 +103,7 @@ def nearest_neighbor(cities, start_city=0):
 # =========================================================
 
 def randomized_nearest_neighbor_top_k(
-    cities,
+    distance_matrix,
     k=3,
     seed=None,
     random_start=True
@@ -119,12 +117,10 @@ def randomized_nearest_neighbor_top_k(
     """
 
     rng = random.Random(seed)
-    n = len(cities)
+    n = len(distance_matrix)
 
     if n == 0:
         return [], 0.0
-
-    distance_matrix = create_distance_matrix(cities)
 
     if random_start:
         start_city = rng.randrange(n)
@@ -173,7 +169,7 @@ def randomized_nearest_neighbor_top_k(
 # =========================================================
 
 
-def randomized_start_nearest_neighbor(cities, seed=None):
+def randomized_start_nearest_neighbor(distance_matrix, seed=None):
     """
     Standard nearest neighbor but with a randomly selected
     starting city.
@@ -181,10 +177,10 @@ def randomized_start_nearest_neighbor(cities, seed=None):
 
     rng = random.Random(seed)
 
-    start_city = rng.randrange(len(cities))
+    start_city = rng.randrange(len(distance_matrix))
 
     return nearest_neighbor(
-        cities,
+        distance_matrix,
         start_city=start_city
     )
 
@@ -195,7 +191,7 @@ def randomized_start_nearest_neighbor(cities, seed=None):
 # =========================================================
 
 def randomized_nearest_neighbor_weighted(
-    cities,
+    distance_matrix,
     seed=None,
     random_start=True
 ):
@@ -212,12 +208,10 @@ def randomized_nearest_neighbor_weighted(
 
     rng = random.Random(seed)
 
-    n = len(cities)
+    n = len(distance_matrix)
 
     if n == 0:
         return [], 0.0
-
-    distance_matrix = create_distance_matrix(cities)
 
     if random_start:
         start_city = rng.randrange(n)
