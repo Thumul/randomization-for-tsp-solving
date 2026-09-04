@@ -79,7 +79,7 @@ def load_tsplib(filename):
         }
     """
 
-    path = "./data/tsplib/" + filename
+    path = "./data/tsp files/" + filename
 
     headers = {}
     coordinates = []
