@@ -97,7 +97,7 @@ def print_analysis(deterministic, results):
 
 def main():
 
-    data = load_tsplib("trap9.tsp")
+    data = load_tsplib("trap20.tsp")
     distance_matrix = data["distance_matrix"]
     runs = 500
 
