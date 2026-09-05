@@ -1,5 +1,7 @@
 import random
 
+INSTANCE_SIZES = [10, 20, 50, 100, 200, 500, 1000]
+
 
 def generate_random_euclidean(
     n,
@@ -49,6 +51,70 @@ def generate_clustered(
         x = rng.gauss(center_x, cluster_std)
         y = rng.gauss(center_y, cluster_std)
         cities.append((x, y))
+
+    return cities
+
+
+def generate_instance_suite(sizes=INSTANCE_SIZES, base_seed=1000):
+    """
+    Generate one fixed-seed random Euclidean instance per size in `sizes`.
+
+    The seed is derived deterministically from `base_seed` and n, so
+    every algorithm compared later sees the exact same coordinates
+    for a given instance size.
+    """
+
+    return {
+        n: generate_random_euclidean(n, seed=base_seed + n)
+        for n in sizes
+    }
+
+
+def generate_adversarial(
+    seed=None,
+    num_clusters=4,
+    cluster_size=15,
+    cluster_std=8,
+    spread=1000
+):
+    """
+    Structured instance designed to expose Nearest Neighbor's greedy
+    weakness.
+
+    Cities form tight clusters spread far apart, and each cluster gets
+    one "straggler" placed off to the side, roughly midway toward
+    another cluster. NN tends to consume a whole cluster greedily
+    before noticing the straggler was left behind, so it ends up far
+    from everything else and forces an expensive detour later in the
+    tour.
+    """
+
+    rng = random.Random(seed)
+
+    cluster_centers = [
+        (rng.uniform(0, spread), rng.uniform(0, spread))
+        for _ in range(num_clusters)
+    ]
+
+    cities = []
+
+    for center_x, center_y in cluster_centers:
+
+        for _ in range(cluster_size):
+            x = rng.gauss(center_x, cluster_std)
+            y = rng.gauss(center_y, cluster_std)
+            cities.append((x, y))
+
+        # Straggler: placed partway toward another random cluster,
+        # so it is isolated from its own cluster but not yet close
+        # to the next one either.
+        other_x, other_y = rng.choice(cluster_centers)
+        t = rng.uniform(0.3, 0.5)
+
+        straggler_x = center_x + t * (other_x - center_x)
+        straggler_y = center_y + t * (other_y - center_y)
+
+        cities.append((straggler_x, straggler_y))
 
     return cities
 
