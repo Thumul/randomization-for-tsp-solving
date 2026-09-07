@@ -8,15 +8,14 @@ from algorithms import (
     randomized_start_nearest_neighbor,
     held_karp
 )
+from datasets import load_tsplib_solutions
 
 # Beyond this size, Held-Karp (O(n^2 * 2^n)) is no longer practical.
 EXACT_SOLVABLE_MAX_N = 13
 
-# Known optimal tour lengths for the TSPLIB benchmark instances used.
-KNOWN_OPTIMAL_LENGTHS = {
-    "eil51": 426,
-    "berlin52": 7542
-}
+# Best-known tour lengths for every TSPLIB instance in data/tsplib/,
+# keyed by instance name (e.g. "berlin52"). Loaded once at import time.
+KNOWN_OPTIMAL_LENGTHS = load_tsplib_solutions()
 
 RANDOMIZED_VARIANTS = {
     "top_k": {
@@ -226,7 +225,10 @@ def run_experiment_suite(runs=30, k=5, sizes=None):
         generate_clustered,
         generate_adversarial,
         load_tsplib,
-        INSTANCE_SIZES
+        list_tsplib_instances,
+        INSTANCE_SIZES,
+        TSPLIB_DIR,
+        TSPLIB_SWEEP_MAX_N
     )
 
     if sizes is None:
@@ -272,8 +274,8 @@ def run_experiment_suite(runs=30, k=5, sizes=None):
         k=k
     )
 
-    for name in KNOWN_OPTIMAL_LENGTHS:
-        cities = load_tsplib(f"data/{name}.tsp")
+    for name in list_tsplib_instances(directory=TSPLIB_DIR, max_n=TSPLIB_SWEEP_MAX_N):
+        cities = load_tsplib(f"{TSPLIB_DIR}/{name}.tsp")
 
         all_records += run_experiment(
             cities,

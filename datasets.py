@@ -1,6 +1,15 @@
+import os
 import random
+import re
 
 INSTANCE_SIZES = [10, 20, 50, 100, 200, 500, 1000]
+
+TSPLIB_DIR = "data/tsplib"
+
+# Sizes above this are excluded from the automated experiment sweep:
+# at O(n^2) per run with R=30 trials, the largest TSPLIB instances
+# (up to n=85900) would take hours per instance.
+TSPLIB_SWEEP_MAX_N = 5000
 
 
 def generate_random_euclidean(
@@ -117,6 +126,82 @@ def generate_adversarial(
         cities.append((straggler_x, straggler_y))
 
     return cities
+
+
+def get_tsplib_dimension(filename):
+    """
+    Read just the header of a TSPLIB file to get its DIMENSION,
+    without parsing the full coordinate list.
+    """
+
+    with open(filename, "r") as file:
+
+        for line in file:
+
+            line = line.strip()
+
+            if line.upper().startswith("DIMENSION"):
+                return int(line.split(":")[1].strip())
+
+            if line == "NODE_COORD_SECTION":
+                break
+
+    return None
+
+
+def load_tsplib_solutions(directory=TSPLIB_DIR):
+    """
+    Parse the `solutions` reference file (one "name : length" pair per
+    line, some with a trailing annotation) into {name: best_known_length}.
+    """
+
+    solutions = {}
+    path = os.path.join(directory, "solutions.txt")
+
+    with open(path, "r") as file:
+
+        for line in file:
+
+            if ":" not in line:
+                continue
+
+            name, value = line.split(":", 1)
+            name = name.strip()
+
+            # Take only the leading number (some lines have a trailing
+            # annotation like "(CEIL_2D)" whose digits must be ignored).
+            match = re.match(r"\s*(\d+)", value)
+
+            if match:
+                solutions[name] = int(match.group(1))
+
+    return solutions
+
+
+def list_tsplib_instances(directory=TSPLIB_DIR, max_n=None):
+    """
+    List available TSPLIB instance names (without the .tsp extension)
+    in `directory`, optionally filtered to n <= max_n.
+    """
+
+    names = []
+
+    for entry in sorted(os.listdir(directory)):
+
+        if not entry.endswith(".tsp"):
+            continue
+
+        name = entry[:-4]
+
+        if max_n is not None:
+            n = get_tsplib_dimension(os.path.join(directory, entry))
+
+            if n is None or n > max_n:
+                continue
+
+        names.append(name)
+
+    return names
 
 
 def load_tsplib(filename):
