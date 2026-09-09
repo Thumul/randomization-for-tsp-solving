@@ -16,7 +16,7 @@ from experiments import (
 
 
 # Configuration
-NUMBER_OF_TSP_FILES = 15
+NUMBER_OF_TSP_FILES = 25
 RUNS = 500
 TOP_K = 3
 FILE_PREFIX = "graph-"
@@ -120,7 +120,7 @@ def run_graph(filename):
 def print_results_table(results):
 
     print("\n")
-    print("=" * 138)
+    print("=" * 100)
 
     print(
         f"{'Graph':<14}"
@@ -134,7 +134,7 @@ def print_results_table(results):
         f"{'Imp %':>9}"
     )
 
-    print("=" * 138)
+    print("=" * 100)
 
     for result in results:
 
@@ -153,7 +153,7 @@ def print_results_table(results):
             f"{result['weighted_improvement']:>9.2f}"
         )
 
-    print("=" * 138)
+    print("=" * 100)
 
 
 
