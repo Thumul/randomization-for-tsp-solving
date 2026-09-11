@@ -5,3 +5,8 @@ __pycache__/
 # Generated experiment output
 results/
 *.png
+
+# Generated dataset: regenerable by running tsp_experiment.ipynb (Part 1).
+# data/tsplib/ was already committed separately before this rule was added,
+# so it stays tracked -- .gitignore only affects new/untracked files.
+data/
