@@ -1,3 +1,4 @@
+import itertools
 import math
 import random
 
@@ -44,6 +45,77 @@ def calculate_tour_length(tour, distance_matrix):
         total_distance += distance_matrix[current_city][next_city]
 
     return total_distance
+
+
+# =========================================================
+# EXACT SOLVER
+# Held-Karp Dynamic Programming
+# =========================================================
+
+def held_karp(cities):
+    """
+    Exact TSP solver using Held-Karp dynamic programming.
+
+    Runs in O(n^2 * 2^n) time, practical for n up to ~15.
+    Tour always starts at city 0.
+    """
+
+    n = len(cities)
+
+    if n == 0:
+        return [], 0.0
+
+    if n == 1:
+        return [0], 0.0
+
+    distance_matrix = create_distance_matrix(cities)
+
+    # cost[(subset, last)] = (min cost to start at 0, visit exactly
+    # `subset`, and end at `last`; predecessor of `last` on that path)
+    cost = {}
+
+    for k in range(1, n):
+        cost[(frozenset([k]), k)] = (distance_matrix[0][k], 0)
+
+    for subset_size in range(2, n):
+        for subset in itertools.combinations(range(1, n), subset_size):
+            subset = frozenset(subset)
+
+            for k in subset:
+                prev_subset = subset - {k}
+
+                best_cost, best_prev = min(
+                    (
+                        cost[(prev_subset, m)][0] + distance_matrix[m][k],
+                        m
+                    )
+                    for m in prev_subset
+                )
+
+                cost[(subset, k)] = (best_cost, best_prev)
+
+    full_set = frozenset(range(1, n))
+
+    best_cost, best_last = min(
+        (cost[(full_set, k)][0] + distance_matrix[k][0], k)
+        for k in range(1, n)
+    )
+
+    # Reconstruct the tour by walking predecessors backward
+    tour = []
+    subset = full_set
+    last = best_last
+
+    while last != 0:
+        tour.append(last)
+        _, prev = cost[(subset, last)]
+        subset = subset - {last}
+        last = prev
+
+    tour.append(0)
+    tour.reverse()
+
+    return tour, best_cost
 
 
 # =========================================================

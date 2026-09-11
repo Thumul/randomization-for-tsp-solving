@@ -1,0 +1,53 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python --version)",
+      "PowerShell(python -c \"import numpy, matplotlib, pandas; print\\('numpy', numpy.__version__\\); print\\('matplotlib', matplotlib.__version__\\); print\\('pandas', pandas.__version__\\)\")",
+      "PowerShell(curl.exe -s -o \"$env:TEMP\\\\berlin52_test.tsp\" -w \"%{http_code} %{size_download}`n\" \"http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/tsp/berlin52.tsp\")",
+      "PowerShell(curl.exe -s -m 20 -o \"$env:TEMP\\\\berlin52_test.tsp\" -w \"mirror1 %{http_code} %{size_download}`n\" \"https://raw.githubusercontent.com/mastqe/tsplib/master/berlin52.tsp\")",
+      "PowerShell(python -m pip --version)",
+      "PowerShell(python -c \"import sys; print\\(sys.prefix\\); print\\(sys.executable\\)\")",
+      "PowerShell(Get-Content \"$env:TEMP\\\\berlin52_test.tsp\" -TotalCount 12; Write-Output \"---TAIL---\"; Get-Content \"$env:TEMP\\\\berlin52_test.tsp\" -Tail 4)",
+      "WebSearch",
+      "PowerShell(& \"E:\\\\projects\\\\randomization-for-tsp-solving\\\\.venv\\\\Scripts\\\\python.exe\" -m pip install numpy matplotlib pandas tsplib95 2>&1)",
+      "PowerShell(& \"E:\\\\projects\\\\randomization-for-tsp-solving\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\chamo\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--projects-randomization-for-tsp-solving\\\\1d94822b-e8da-470b-baa2-e28e7960ee4e\\\\scratchpad\\\\probe_tsplib.py\")",
+      "PowerShell(& \"E:\\\\projects\\\\randomization-for-tsp-solving\\\\.venv\\\\Scripts\\\\python.exe\" \"E:\\\\projects\\\\randomization-for-tsp-solving\\\\datasets.py\")",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(.venv/Scripts/python.exe main.py)",
+      "Bash(.venv/Scripts/python.exe -c \"import matplotlib, pandas, numpy; print\\(matplotlib.__version__, pandas.__version__, numpy.__version__\\)\")",
+      "Bash(.venv/Scripts/python.exe analysis.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" --max-time 10 https://raw.githubusercontent.com/mastqe/tsplib/master/README)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" --max-time 10 http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/tsp/)",
+      "Bash(git clone *)",
+      "Bash(ls /tmp/tsplib_mirror | head -30 && echo \"---count---\" && ls /tmp/tsplib_mirror/*.tsp 2>/dev/null | wc -l && find /tmp/tsplib_mirror -iname \"*.tsp\" | wc -l)",
+      "Read(//tmp/**)",
+      "Bash(cat /tmp/tsplib_mirror/README.md 2>/dev/null | head -30)",
+      "Read(//tmp/tsplib_mirror/**)",
+      "Bash(awk '$1<=5000')",
+      "Read(//tmp/tsplib_euclidean/**)",
+      "Bash(grep -n \"dsj1000\" /tmp/tsplib_euclidean/solutions)",
+      "Bash(cp /tmp/tsplib_euclidean/*.tsp \"E:/projects/randomization-for-tsp-solving/data/tsplib/\")",
+      "Bash(cp /tmp/tsplib_euclidean/solutions \"E:/projects/randomization-for-tsp-solving/data/tsplib/solutions.txt\")",
+      "Bash(python3 -)",
+      "Bash(git checkout *)",
+      "Bash(rm -rf /tmp/smoke_euclidean /tmp/smoke_sparse *)",
+      "Bash(.venv/Scripts/python.exe -c \"import jupyter\")",
+      "Bash(.venv/Scripts/python.exe -c \"import nbformat\")",
+      "Bash(.venv/Scripts/python.exe -m pip install --quiet jupyter nbformat nbconvert ipykernel)",
+      "Bash(.venv/Scripts/python.exe -c \"import jupyter, nbformat, nbconvert; print\\('ok'\\)\")",
+      "Bash(.venv/Scripts/python.exe \"C:\\\\Users\\\\chamo\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e--projects-randomization-for-tsp-solving\\\\1d94822b-e8da-470b-baa2-e28e7960ee4e\\\\scratchpad\\\\build_notebook.py\")",
+      "Bash(.venv/Scripts/python.exe -m jupyter nbconvert --to notebook --execute --inplace tsp_experiment.ipynb)",
+      "Bash(.venv/Scripts/python.exe -c \"import ast; ast.parse\\(open\\('datasets.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(rm -rf /tmp/smoke2_euclidean /tmp/smoke2_sparse)",
+      "Bash(rm -rf /tmp/smoke3_sparse)",
+      "Bash(grep -n *)",
+      "Bash(echo \"---exit code: $?---\")",
+      "Bash(grep -c *)"
+    ],
+    "additionalDirectories": [
+      "e:\\tmp\\smoke_euclidean"
+    ]
+  }
+}
