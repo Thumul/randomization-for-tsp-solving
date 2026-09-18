@@ -226,3 +226,73 @@ def run_nn_over_manifest(manifest, load_matrix, reference_fn=None, label="", pro
             print(f"  [{label}] {i + 1}/{len(manifest)} done")
 
     return records
+
+
+def run_randomized_over_manifest(
+    manifest,
+    algorithm,
+    load_matrix,
+    algorithm_name,
+    runs=30,
+    reference_fn=None,
+    label="",
+    progress_every=50,
+    **algorithm_kwargs,
+):
+    """
+    Run a randomized NN variant `runs` times (independent seeds) per
+    instance in `manifest`, mirroring `run_nn_over_manifest` but keeping
+    every seeded run instead of collapsing to one result -- needed to
+    characterize the distribution of outcomes (mean/std/best/worst), per
+    the proposal's R=30-seed methodology, rather than just a single
+    value.
+
+    The reference length (if `reference_fn` is given) is computed once
+    per instance -- it doesn't depend on the seed -- and reused across
+    all of that instance's runs, rather than recomputed `runs` times.
+    """
+
+    records = []
+
+    for i, row in enumerate(manifest):
+        distance_matrix = load_matrix(row)
+        reference = reference_fn(row) if reference_fn else None
+
+        seed_records = run_randomized(
+            algorithm,
+            distance_matrix,
+            runs=runs,
+            **algorithm_kwargs,
+        )
+
+        for seed_record in seed_records:
+            length = seed_record["length"]
+            feasible = math.isfinite(length)
+
+            record = {
+                "instance": row["name"],
+                "category": row["category"],
+                "structure": row["structure"],
+                "n": row["n"],
+                "algorithm": algorithm_name,
+                "seed": seed_record["seed"],
+                "length": length,
+                "time": seed_record["time"],
+                "feasible": feasible,
+                "reference_length": None,
+                "reference_type": None,
+                "approx_ratio": None,
+            }
+
+            if reference is not None and feasible:
+                reference_length, reference_type = reference
+                record["reference_length"] = reference_length
+                record["reference_type"] = reference_type
+                record["approx_ratio"] = length / reference_length
+
+            records.append(record)
+
+        if progress_every and (i + 1) % progress_every == 0:
+            print(f"  [{label}] {i + 1}/{len(manifest)} instances done")
+
+    return records
