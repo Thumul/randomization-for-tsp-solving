@@ -1,3 +1,4 @@
+import math
 import time
 import statistics
 
@@ -8,7 +9,7 @@ from algorithms import (
     randomized_start_nearest_neighbor,
     held_karp
 )
-from datasets import load_tsplib_solutions
+from datasets import load_tsplib_solutions, load_euclidean_instance
 
 # Beyond this size, Held-Karp (O(n^2 * 2^n)) is no longer practical.
 EXACT_SOLVABLE_MAX_N = 13
@@ -50,10 +51,10 @@ def measure_algorithm(algorithm, cities, **kwargs):
     }
 
 
-def run_deterministic(cities):
+def run_deterministic(distance_matrix):
     return measure_algorithm(
         nearest_neighbor,
-        cities,
+        distance_matrix,
         start_city=0
     )
 
@@ -131,158 +132,97 @@ def run_randomized_top_k(cities, k=3, runs=50):
     return stats
 
 
-def reference_length(cities, instance_name, all_lengths):
+def euclidean_reference(row):
     """
-    Ground-truth / best-available reference length for computing
-    approximation ratios.
+    Reference length for one Euclidean-category manifest row (as produced
+    by `datasets.load_euclidean_manifest`): the exact Held-Karp optimum,
+    if `n` is small enough to compute it -- otherwise None.
 
-    Preference order:
-    1. Known TSPLIB optimum, if `instance_name` matches a benchmark.
-    2. Exact optimum via Held-Karp, if the instance is small enough.
-    3. Best tour length observed across every algorithm run on this
-       instance (the strongest lower-bound estimate available).
-    """
-
-    if instance_name in KNOWN_OPTIMAL_LENGTHS:
-        return KNOWN_OPTIMAL_LENGTHS[instance_name], "tsplib_optimal"
-
-    if len(cities) <= EXACT_SOLVABLE_MAX_N:
-        _, length = held_karp(cities)
-        return length, "exact"
-
-    return min(all_lengths), "best_found"
-
-
-def run_experiment(cities, instance_name, structure, runs=30, k=5):
-    """
-    Run deterministic NN and every randomized variant on one instance.
-
-    Returns a flat list of per-run records (one per algorithm run),
-    each annotated with the instance's approximation ratio reference.
+    Unlike TSPLIB, generated Euclidean instances have no externally
+    published optimum, so "no reference" is the honest answer once n
+    exceeds what Held-Karp can solve; it isn't filled in with a
+    single-algorithm's own tour length; a "best observed" reference
+    becomes meaningful once randomized variants contribute multiple
+    tours per instance.
     """
 
-    all_records = []
+    if row["n"] > EXACT_SOLVABLE_MAX_N:
+        return None
 
-    deterministic = run_deterministic(cities)
+    cities = load_euclidean_instance(row["file"])
+    _, length = held_karp(cities)
 
-    all_records.append({
-        "instance": instance_name,
-        "structure": structure,
-        "n": len(cities),
-        "algorithm": "deterministic_nn",
-        "seed": None,
-        "length": deterministic["length"],
-        "time": deterministic["time"]
-    })
-
-    for variant_name, config in RANDOMIZED_VARIANTS.items():
-        kwargs = dict(config["kwargs"])
-
-        if variant_name == "top_k":
-            kwargs["k"] = k
-
-        records = run_randomized(
-            config["algorithm"],
-            cities,
-            runs=runs,
-            **kwargs
-        )
-
-        for record in records:
-            all_records.append({
-                "instance": instance_name,
-                "structure": structure,
-                "n": len(cities),
-                "algorithm": variant_name,
-                "seed": record["seed"],
-                "length": record["length"],
-                "time": record["time"]
-            })
-
-    all_lengths = [r["length"] for r in all_records]
-    ref_length, ref_type = reference_length(cities, instance_name, all_lengths)
-
-    for record in all_records:
-        record["reference_length"] = ref_length
-        record["reference_type"] = ref_type
-        record["approx_ratio"] = record["length"] / ref_length
-
-    return all_records
+    return length, "exact"
 
 
-def run_experiment_suite(runs=30, k=5, sizes=None):
+def tsplib_reference(row):
     """
-    Run the full experiment suite described in the proposal:
-    the synthetic random sweep, a matching clustered sweep, one
-    adversarial instance, and the TSPLIB benchmark instances.
-
-    Returns a flat list of per-run records suitable for loading
-    directly into a pandas DataFrame.
+    Reference length for one TSPLIB manifest row: its published
+    best-known/optimal tour length, if this instance has one recorded
+    in `data/tsplib/solutions.txt`.
     """
 
-    from datasets import (
-        generate_instance_suite,
-        generate_clustered,
-        generate_adversarial,
-        load_tsplib,
-        list_tsplib_instances,
-        INSTANCE_SIZES,
-        TSPLIB_DIR,
-        TSPLIB_SWEEP_MAX_N
-    )
+    if row["name"] not in KNOWN_OPTIMAL_LENGTHS:
+        return None
 
-    if sizes is None:
-        sizes = INSTANCE_SIZES
+    return KNOWN_OPTIMAL_LENGTHS[row["name"]], "tsplib_optimal"
 
-    all_records = []
 
-    random_suite = generate_instance_suite(sizes=sizes)
+def run_nn_over_manifest(manifest, load_matrix, reference_fn=None, label="", progress_every=50):
+    """
+    Run deterministic NN once per instance described in `manifest` (a
+    list of dicts as produced by the dataset manifest loaders/builders
+    in `datasets.py`).
 
-    for n, cities in random_suite.items():
-        all_records += run_experiment(
-            cities,
-            instance_name=f"random_n{n}",
-            structure="random",
-            runs=runs,
-            k=k
-        )
+    `load_matrix(row)` loads that row's dense distance matrix -- how to
+    do so differs per dataset category (Euclidean coordinates vs. a
+    sparse directional edge list), so it's supplied by the caller rather
+    than hardcoded here, keeping this loop reusable across categories.
 
-    for n in sizes:
-        cities = generate_clustered(n=n, seed=2000 + n)
+    `reference_fn(row)`, if given, returns (reference_length,
+    reference_type) or None when no reference is available for that
+    row; used to compute an approximation ratio where one is meaningful.
 
-        all_records += run_experiment(
-            cities,
-            instance_name=f"clustered_n{n}",
-            structure="clustered",
-            runs=runs,
-            k=k
-        )
+    A run is marked infeasible when NN was forced to close the tour
+    using a pair with no edge in the original sparse graph (an infinite
+    entry in the dense matrix) -- this can only happen on the
+    distance-matrix category, and is itself one of the things the
+    dataset was built to expose.
+    """
 
-    adversarial_cities = generate_adversarial(
-        seed=3000,
-        num_clusters=20,
-        cluster_size=6,
-        cluster_std=8,
-        spread=1000
-    )
+    records = []
 
-    all_records += run_experiment(
-        adversarial_cities,
-        instance_name="adversarial",
-        structure="adversarial",
-        runs=runs,
-        k=k
-    )
+    for i, row in enumerate(manifest):
+        distance_matrix = load_matrix(row)
+        result = run_deterministic(distance_matrix)
+        length = result["length"]
+        feasible = math.isfinite(length)
 
-    for name in list_tsplib_instances(directory=TSPLIB_DIR, max_n=TSPLIB_SWEEP_MAX_N):
-        cities = load_tsplib(f"{TSPLIB_DIR}/{name}.tsp")
+        record = {
+            "instance": row["name"],
+            "category": row["category"],
+            "structure": row["structure"],
+            "n": row["n"],
+            "algorithm": "deterministic_nn",
+            "length": length,
+            "time": result["time"],
+            "feasible": feasible,
+            "reference_length": None,
+            "reference_type": None,
+            "approx_ratio": None,
+        }
 
-        all_records += run_experiment(
-            cities,
-            instance_name=name,
-            structure="tsplib",
-            runs=runs,
-            k=k
-        )
+        reference = reference_fn(row) if (reference_fn and feasible) else None
 
-    return all_records
+        if reference is not None:
+            reference_length, reference_type = reference
+            record["reference_length"] = reference_length
+            record["reference_type"] = reference_type
+            record["approx_ratio"] = length / reference_length
+
+        records.append(record)
+
+        if progress_every and (i + 1) % progress_every == 0:
+            print(f"  [{label}] {i + 1}/{len(manifest)} done")
+
+    return records

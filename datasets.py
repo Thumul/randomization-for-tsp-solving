@@ -431,6 +431,36 @@ def load_euclidean_instance(path):
     return [tuple(point) for point in data["coordinates"]]
 
 
+def load_euclidean_manifest(out_dir):
+    """
+    Reconstruct the manifest for a previously generated Euclidean dataset
+    by reading each instance file's own metadata (name/structure/bucket/
+    n/seed), rather than requiring `generate_euclidean_dataset` to have
+    run earlier in the same session. Coordinates are left on disk and
+    loaded lazily (via `load_euclidean_instance`) since they're not
+    needed until an algorithm actually runs on that instance.
+    """
+
+    manifest = []
+
+    for entry in sorted(os.listdir(out_dir)):
+
+        if not entry.endswith(".json"):
+            continue
+
+        path = os.path.join(out_dir, entry)
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        manifest.append({
+            key: value for key, value in data.items() if key != "coordinates"
+        })
+        manifest[-1]["file"] = path
+
+    return manifest
+
+
 # =========================================================
 # DISTANCE-MATRIX DATASET
 # Incomplete, directional (possibly asymmetric) reachability graphs --
@@ -762,3 +792,28 @@ def load_sparse_matrix(csv_path):
             max_index = max(max_index, a, b)
 
     return edges, max_index + 1
+
+
+def load_distance_matrix_manifest(out_dir):
+    """
+    Reconstruct the manifest for a previously generated distance-matrix
+    dataset by reading each instance's JSON metadata sidecar, mirroring
+    `load_euclidean_manifest`.
+    """
+
+    manifest = []
+
+    for entry in sorted(os.listdir(out_dir)):
+
+        if not entry.endswith(".json"):
+            continue
+
+        meta_path = os.path.join(out_dir, entry)
+
+        with open(meta_path, "r") as f:
+            data = json.load(f)
+
+        data["file"] = meta_path[:-len(".json")] + ".csv"
+        manifest.append(data)
+
+    return manifest

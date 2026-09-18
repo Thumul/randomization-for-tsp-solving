@@ -2,6 +2,8 @@ import itertools
 import math
 import random
 
+import numpy as np
+
 
 def euclidean_distance(city1, city2):
     """
@@ -16,18 +18,36 @@ def euclidean_distance(city1, city2):
 
 def create_distance_matrix(cities):
     """
-    Precompute distances between every pair of cities.
+    Precompute distances between every pair of cities as a dense,
+    symmetric n x n matrix.
+
+    Vectorized with numpy: a pure-Python nested loop is O(n^2) Python-level
+    iterations, which becomes the bottleneck at n in the thousands (the
+    dataset's largest bucket goes up to n=5000).
     """
-    n = len(cities)
+    coords = np.asarray(cities, dtype=float)
+    diff = coords[:, None, :] - coords[None, :, :]
 
-    matrix = [[0.0] * n for _ in range(n)]
+    return np.sqrt((diff ** 2).sum(axis=-1))
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            distance = euclidean_distance(cities[i], cities[j])
 
-            matrix[i][j] = distance
-            matrix[j][i] = distance
+def build_dense_matrix_from_edges(edges, n, missing_value=float("inf")):
+    """
+    Expand a sparse, possibly directional (from, to, distance) edge list
+    -- as produced for the distance-matrix dataset category -- into a
+    dense n x n matrix, so it can be fed to the same NN/RNN implementations
+    used for Euclidean instances.
+
+    Every pair with no edge gets `missing_value` (default: infinity, i.e.
+    "no route exists"). The diagonal is always 0. Since the source graph
+    can be directional, matrix[i][j] and matrix[j][i] are populated
+    independently and need not be equal.
+    """
+    matrix = np.full((n, n), missing_value, dtype=float)
+    np.fill_diagonal(matrix, 0.0)
+
+    for a, b, distance in edges:
+        matrix[a][b] = distance
 
     return matrix
 
@@ -127,6 +147,14 @@ def nearest_neighbor(distance_matrix, start_city=0):
     """
     Deterministic Nearest Neighbor TSP heuristic.
     At each step, select the closest unvisited city.
+
+    On a complete graph this always finds one. On a sparse/directional
+    graph (missing pairs represented as float("inf")), the current city
+    can have no reachable unvisited city left -- in that case the tour
+    is forced to continue to the first unvisited city in index order so
+    it still completes as a valid permutation. The resulting tour length
+    then includes an infinite edge, which is how callers detect that the
+    tour is infeasible in the original sparse graph.
     """
 
     n = len(distance_matrix)
@@ -155,6 +183,14 @@ def nearest_neighbor(distance_matrix, start_city=0):
                 if distance < nearest_distance:
                     nearest_distance = distance
                     nearest_city = city
+
+        if nearest_city is None:
+
+            for city in range(n):
+
+                if not visited[city]:
+                    nearest_city = city
+                    break
 
         tour.append(nearest_city)
 
