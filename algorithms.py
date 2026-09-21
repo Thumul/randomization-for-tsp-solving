@@ -301,58 +301,122 @@ def randomized_start_nearest_neighbor(distance_matrix, seed=None):
 def randomized_nearest_neighbor_weighted(
     distance_matrix,
     seed=None,
-    random_start=True
+    random_start=False
 ):
     """
-    Distance-weighted randomized nearest neighbor.
+    Distance-Weighted Randomized Nearest Neighbor.
 
-    Closer cities receive higher probability but the
-    closest city is not always selected.
+    At each step, an unvisited reachable city is selected randomly.
+    Closer cities receive higher probability.
 
-    Probability is proportional to:
+    Weight:
+        w_i = d_min / d_i
 
-        1 / distance
+    where:
+        d_i   = distance to candidate city i
+        d_min = minimum distance among the current candidates
+
+    This relative weighting is numerically more stable than directly
+    using 1 / d_i.
+
+    Infinite distances represent unavailable edges and are excluded.
+    If the algorithm reaches a city from which no unvisited city is
+    reachable, the run is considered infeasible and returns infinity.
     """
 
     rng = random.Random(seed)
 
     n = len(distance_matrix)
 
+    # ---------------------------------------------------------
+    # Handle empty input
+    # ---------------------------------------------------------
     if n == 0:
         return [], 0.0
 
+    # ---------------------------------------------------------
+    # Choose starting city
+    # ---------------------------------------------------------
     if random_start:
-        start_city = rng.randrange(n)
+        current = rng.randrange(n)
     else:
-        start_city = 0
+        current = 0
+
+    tour = [current]
 
     visited = [False] * n
+    visited[current] = True
 
-    visited[start_city] = True
+    total_length = 0.0
 
-    tour = [start_city]
+    # ---------------------------------------------------------
+    # Construct the tour
+    # ---------------------------------------------------------
+    while len(tour) < n:
 
-    current_city = start_city
+        # Find all unvisited cities that are reachable from
+        # the current city.
+        candidates = [
+            city
+            for city in range(n)
+            if not visited[city]
+            and math.isfinite(distance_matrix[current][city])
+            and distance_matrix[current][city] >= 0
+        ]
 
-    epsilon = 1e-12
+        # No reachable unvisited city.
+        # Therefore this run cannot construct a complete tour.
+        if not candidates:
+            return tour, float("inf")
 
-    for _ in range(n - 1):
+        # -----------------------------------------------------
+        # Calculate distance-weighted probabilities
+        # -----------------------------------------------------
 
-        candidates = []
+        distances = [
+            distance_matrix[current][city]
+            for city in candidates
+        ]
+
+        min_distance = min(distances)
+
+        # Construct weights.
+        #
+        # Closest city:
+        #     weight = min_distance / min_distance = 1
+        #
+        # Further cities:
+        #     weight < 1
+        #
+        # Therefore closer cities have higher probability.
         weights = []
 
-        for city in range(n):
+        for distance in distances:
 
-            if not visited[city]:
+            # Handle zero distance safely.
+            if distance == 0:
+                weight = 1.0
+            else:
+                weight = min_distance / distance
 
-                distance = distance_matrix[current_city][city]
+            weights.append(weight)
 
-                candidates.append(city)
+        # -----------------------------------------------------
+        # Validate weights
+        # -----------------------------------------------------
 
-                # Closer cities get larger probability
-                weights.append(
-                    1.0 / (distance + epsilon)
-                )
+        total_weight = sum(weights)
+
+        if (
+            not weights
+            or not math.isfinite(total_weight)
+            or total_weight <= 0
+        ):
+            return tour, float("inf")
+
+        # -----------------------------------------------------
+        # Randomly select next city according to weights
+        # -----------------------------------------------------
 
         next_city = rng.choices(
             candidates,
@@ -360,14 +424,25 @@ def randomized_nearest_neighbor_weighted(
             k=1
         )[0]
 
+        # Add edge length
+        total_length += distance_matrix[current][next_city]
+
+        # Update tour
         tour.append(next_city)
-
         visited[next_city] = True
-        current_city = next_city
 
-    tour_length = calculate_tour_length(
-        tour,
-        distance_matrix
-    )
+        current = next_city
 
-    return tour, tour_length
+    # ---------------------------------------------------------
+    # Return to starting city
+    # ---------------------------------------------------------
+
+    return_edge = distance_matrix[current][tour[0]]
+
+    # Cannot complete the TSP cycle
+    if not math.isfinite(return_edge):
+        return tour, float("inf")
+
+    total_length += return_edge
+
+    return tour, total_length
