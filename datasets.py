@@ -10,9 +10,8 @@ INSTANCE_SIZES = [10, 20, 50, 100, 200, 500, 1000]
 
 TSPLIB_DIR = "data/tsplib"
 
-# Sizes above this are excluded from the automated experiment sweep:
-# at O(n^2) per run with R=30 trials, the largest TSPLIB instances
-# (up to n=85900) would take hours per instance.
+# TSPLIB instances with more cities than this are excluded from the
+# experiment sweep, since each run costs O(n^2) time and memory.
 TSPLIB_SWEEP_MAX_N = 5000
 
 
@@ -23,7 +22,16 @@ def generate_random_euclidean(
     seed=None
 ):
     """
-    Generate n uniformly distributed cities.
+    Generate cities placed uniformly at random in a rectangle.
+
+    Args:
+        n: Number of cities.
+        width: Width of the rectangle.
+        height: Height of the rectangle.
+        seed: Seed for the random number generator.
+
+    Returns:
+        A list of n (x, y) coordinate tuples.
     """
 
     rng = random.Random(seed)
@@ -46,7 +54,23 @@ def generate_clustered(
     seed=None
 ):
     """
-    Generate clustered Euclidean TSP instances.
+    Generate cities drawn from Gaussian clusters.
+
+    Cluster centers are placed uniformly at random in the rectangle. Each
+    city picks a center uniformly at random and is offset from it by
+    independent Gaussian noise in x and y.
+
+    Args:
+        n: Number of cities.
+        num_clusters: Number of cluster centers.
+        width: Width of the rectangle that contains the centers.
+        height: Height of the rectangle that contains the centers.
+        cluster_std: Standard deviation of the Gaussian offset around each
+            center.
+        seed: Seed for the random number generator.
+
+    Returns:
+        A list of n (x, y) coordinate tuples.
     """
 
     rng = random.Random(seed)
@@ -70,11 +94,17 @@ def generate_clustered(
 
 def generate_instance_suite(sizes=INSTANCE_SIZES, base_seed=1000):
     """
-    Generate one fixed-seed random Euclidean instance per size in `sizes`.
+    Generate one uniform-random Euclidean instance per size.
 
-    The seed is derived deterministically from `base_seed` and n, so
-    every algorithm compared later sees the exact same coordinates
-    for a given instance size.
+    The seed of each instance is base_seed + n, so a given size always
+    yields the same coordinates.
+
+    Args:
+        sizes: Instance sizes (numbers of cities).
+        base_seed: Base value from which each instance seed is derived.
+
+    Returns:
+        A dict mapping each size n to its list of (x, y) coordinates.
     """
 
     return {
@@ -91,15 +121,26 @@ def generate_adversarial(
     spread=1000
 ):
     """
-    Structured instance designed to expose Nearest Neighbor's greedy
-    weakness.
+    Generate an instance on which Nearest Neighbor performs poorly.
 
-    Cities form tight clusters spread far apart, and each cluster gets
-    one "straggler" placed off to the side, roughly midway toward
-    another cluster. NN tends to consume a whole cluster greedily
-    before noticing the straggler was left behind, so it ends up far
-    from everything else and forces an expensive detour later in the
-    tour.
+    Cities form tight, well-separated clusters. Each cluster also has one
+    straggler city placed 30-50% of the way toward another cluster's
+    center. Nearest Neighbor tends to visit a whole cluster before the
+    straggler, which leaves the straggler to be reached later by an
+    expensive detour.
+
+    Args:
+        seed: Seed for the random number generator.
+        num_clusters: Number of clusters.
+        cluster_size: Number of cities in each cluster, excluding the
+            straggler.
+        cluster_std: Standard deviation of the Gaussian offset around each
+            cluster center.
+        spread: Side length of the square that contains the cluster
+            centers.
+
+    Returns:
+        A list of num_clusters * (cluster_size + 1) (x, y) tuples.
     """
 
     rng = random.Random(seed)
@@ -118,9 +159,7 @@ def generate_adversarial(
             y = rng.gauss(center_y, cluster_std)
             cities.append((x, y))
 
-        # Straggler: placed partway toward another random cluster,
-        # so it is isolated from its own cluster but not yet close
-        # to the next one either.
+        # Straggler: placed partway toward another randomly chosen cluster
         other_x, other_y = rng.choice(cluster_centers)
         t = rng.uniform(0.3, 0.5)
 
@@ -134,8 +173,17 @@ def generate_adversarial(
 
 def get_tsplib_dimension(filename):
     """
-    Read just the header of a TSPLIB file to get its DIMENSION,
-    without parsing the full coordinate list.
+    Read the DIMENSION field from the header of a TSPLIB file.
+
+    Parsing stops at the coordinate section, so the coordinates are not
+    read.
+
+    Args:
+        filename: Path to a .tsp file.
+
+    Returns:
+        The number of cities as an int, or None if the header has no
+        DIMENSION field.
     """
 
     with open(filename, "r") as file:
@@ -155,8 +203,16 @@ def get_tsplib_dimension(filename):
 
 def load_tsplib_solutions(directory=TSPLIB_DIR):
     """
-    Parse the `solutions` reference file (one "name : length" pair per
-    line, some with a trailing annotation) into {name: best_known_length}.
+    Parse the TSPLIB reference file `solutions.txt`.
+
+    Each line has the form "name : length", optionally followed by an
+    annotation such as "(CEIL_2D)".
+
+    Args:
+        directory: Directory containing `solutions.txt`.
+
+    Returns:
+        A dict mapping instance name to its best-known tour length.
     """
 
     solutions = {}
@@ -172,8 +228,8 @@ def load_tsplib_solutions(directory=TSPLIB_DIR):
             name, value = line.split(":", 1)
             name = name.strip()
 
-            # Take only the leading number (some lines have a trailing
-            # annotation like "(CEIL_2D)" whose digits must be ignored).
+            # Keep only the leading number; digits in a trailing
+            # annotation are ignored.
             match = re.match(r"\s*(\d+)", value)
 
             if match:
@@ -184,8 +240,15 @@ def load_tsplib_solutions(directory=TSPLIB_DIR):
 
 def list_tsplib_instances(directory=TSPLIB_DIR, max_n=None):
     """
-    List available TSPLIB instance names (without the .tsp extension)
-    in `directory`, optionally filtered to n <= max_n.
+    List the TSPLIB instances available in a directory.
+
+    Args:
+        directory: Directory containing .tsp files.
+        max_n: If given, only instances with at most this many cities
+            are listed.
+
+    Returns:
+        A sorted list of instance names, without the .tsp extension.
     """
 
     names = []
@@ -210,15 +273,21 @@ def list_tsplib_instances(directory=TSPLIB_DIR, max_n=None):
 
 def load_tsplib(filename):
     """
-    Load a simple TSPLIB EUC_2D instance.
+    Load the city coordinates of a TSPLIB EUC_2D instance.
 
-    Expected format contains:
+    The file is expected to contain:
 
         NODE_COORD_SECTION
         1 x y
         2 x y
         ...
         EOF
+
+    Args:
+        filename: Path to a .tsp file.
+
+    Returns:
+        A list of (x, y) coordinate tuples in file order.
     """
 
     cities = []
@@ -255,18 +324,14 @@ def load_tsplib(filename):
 # =========================================================
 # BUCKETED INSTANCE SIZE SAMPLING
 #
-# Instance sizes are drawn from 8 fixed ranges ("buckets") spanning
-# 3..5000 cities, rather than a small set of exact fixed sizes. Within
-# each bucket, n is normally distributed around the bucket's median, so
-# every scale is guaranteed coverage (unlike a single normal distribution
-# over the whole 3..5000 range, which would starve the small and large
-# ends) while still producing a natural, non-repeating spread of sizes.
+# Instance sizes are drawn from fixed ranges ("buckets"). Within each
+# bucket, n is normally distributed around the bucket's median. Every
+# size range is therefore covered, and sizes within a bucket are spread
+# rather than repeated.
 # =========================================================
 
-# Suggested default bucket scheme -- not used automatically by any generator
-# below. Every generator takes `buckets` as a required argument; this is
-# just a convenient, documented starting point to pass in explicitly (see
-# the notebook's configuration cells).
+# Default bucket scheme, as (low, high) numbers of cities. The generators
+# do not read it implicitly; callers pass `buckets` explicitly.
 DEFAULT_SIZE_BUCKETS = [
     (3, 10),
     (10, 20),
@@ -278,20 +343,30 @@ DEFAULT_SIZE_BUCKETS = [
     (1000, 5000),
 ]
 
-# Suggested default safety ceiling -- also passed in explicitly (`max_total`)
-# rather than read implicitly, so a generation call can never silently
-# balloon into an unreasonably large dataset without the caller having
-# chosen that ceiling themselves.
+# Default upper limit on the number of instances a generator call accepts.
+# The generators do not read it implicitly; callers pass `max_total`
+# explicitly.
 DEFAULT_MAX_TOTAL_INSTANCES = 1200
 
 
 def sample_bucket_size(low, high, rng, sigma_divisor=6):
     """
-    Draw one instance size from within [low, high], normally distributed
-    around the bucket's median with standard deviation
-    (high-low)/sigma_divisor -- sigma_divisor=6 means about 99.7% of draws
-    land inside the bucket without needing to clip. Any rare draw outside
-    the bucket is clamped back to its edge.
+    Draw one instance size from a bucket.
+
+    The size is normally distributed around the bucket's median with
+    standard deviation (high - low) / sigma_divisor, clamped to
+    [low, high] and rounded to an integer.
+
+    Args:
+        low: Lower bound of the bucket.
+        high: Upper bound of the bucket.
+        rng: A `random.Random` instance.
+        sigma_divisor: Divisor of the bucket width that gives the
+            standard deviation. With 6, about 99.7% of draws fall inside
+            the bucket before clamping.
+
+    Returns:
+        The sampled number of cities as an int.
     """
 
     median = (low + high) / 2
@@ -305,9 +380,14 @@ def sample_bucket_size(low, high, rng, sigma_divisor=6):
 
 def _bucket_instance_counts(total, num_buckets):
     """
-    Split `total` instances as evenly as possible across `num_buckets`
-    buckets, handing the remainder (total % num_buckets) to the first
-    few buckets one each.
+    Split `total` instances across `num_buckets` buckets as evenly as
+    possible.
+
+    The remainder (total % num_buckets) is distributed one instance each
+    to the first buckets.
+
+    Returns:
+        A list of per-bucket instance counts.
     """
 
     base = total // num_buckets
@@ -335,18 +415,33 @@ def generate_euclidean_dataset(
     sigma_divisor=6,
 ):
     """
-    Generate `total` Euclidean TSP instances spread across `buckets`,
-    drawing each instance as either uniform-random or clustered spatial
-    structure. Each instance is written as one JSON file (coordinates +
-    metadata) to `out_dir`.
+    Generate a dataset of Euclidean TSP instances.
 
-    `structure_ratio` is the fraction of instances generated as
-    "clustered" (cities drawn from `num_clusters` Gaussian blobs of
-    spread `cluster_std`, instead of uniformly) rather than "random"
-    (uniformly placed) -- e.g. 0.5 means roughly an even mix of both.
+    Instances are split evenly across the size buckets. Each instance is
+    either "random" (uniformly placed cities) or "clustered" (cities drawn
+    from Gaussian clusters) and is written to `out_dir` as a JSON file
+    holding its metadata and coordinates.
 
-    Returns a manifest: a list of dicts, one per generated instance,
-    describing its category/structure/size/seed/file path.
+    Args:
+        total: Number of instances to generate.
+        buckets: List of (low, high) size ranges.
+        seed: Seed for the dataset. Instance i uses seed + i.
+        out_dir: Output directory, created if missing.
+        max_total: Upper limit on `total`; a larger value raises
+            ValueError.
+        structure_ratio: Probability that an instance is "clustered"
+            rather than "random".
+        num_clusters: Number of clusters in clustered instances.
+        cluster_std: Standard deviation of each cluster.
+        width: Width of the map.
+        height: Height of the map.
+        sigma_divisor: Controls the spread of sizes within a bucket; see
+            `sample_bucket_size`.
+
+    Returns:
+        A manifest: a list of dicts, one per instance, with the keys
+        "name", "category", "structure", "bucket_index", "bucket_low",
+        "bucket_high", "n", "seed" and "file".
     """
 
     if total > max_total:
@@ -421,8 +516,14 @@ def generate_euclidean_dataset(
 
 def load_euclidean_instance(path):
     """
-    Load one Euclidean instance JSON file back into a list of (x, y)
-    coordinate tuples.
+    Load the coordinates of one Euclidean instance.
+
+    Args:
+        path: Path to an instance JSON file written by
+            `generate_euclidean_dataset`.
+
+    Returns:
+        A list of (x, y) coordinate tuples.
     """
 
     with open(path, "r") as f:
@@ -433,12 +534,18 @@ def load_euclidean_instance(path):
 
 def load_euclidean_manifest(out_dir):
     """
-    Reconstruct the manifest for a previously generated Euclidean dataset
-    by reading each instance file's own metadata (name/structure/bucket/
-    n/seed), rather than requiring `generate_euclidean_dataset` to have
-    run earlier in the same session. Coordinates are left on disk and
-    loaded lazily (via `load_euclidean_instance`) since they're not
-    needed until an algorithm actually runs on that instance.
+    Rebuild the manifest of a previously generated Euclidean dataset.
+
+    The manifest is read from the metadata stored in each instance file.
+    Coordinates are not loaded; use `load_euclidean_instance` with the
+    "file" entry to read them.
+
+    Args:
+        out_dir: Directory containing the instance JSON files.
+
+    Returns:
+        A list of manifest dicts, in the same format as
+        `generate_euclidean_dataset`.
     """
 
     manifest = []
@@ -470,19 +577,25 @@ def load_euclidean_manifest(out_dir):
 
 def generate_sparse_matrix(n, k_fraction, seed, width=1000, height=1000, k_min=2):
     """
-    Build a directional k-nearest-neighbor reachability graph over `n`
-    randomly placed cities: each city only has outgoing edges to its
-    k = max(k_min, round(k_fraction * n)) nearest neighbors -- every other
-    pair is unreachable (no entry in the returned edge list, i.e. an
-    implicit float("inf") in the full n x n matrix).
+    Build a directional k-nearest-neighbor reachability graph.
 
-    A random Hamiltonian cycle's directed edges are always force-kept on
-    top of the k-NN edges, guaranteeing at least one valid tour exists
-    regardless of how the k-NN sparsification falls (verifying Hamiltonian
-    -cycle existence directly would be infeasible at n in the thousands).
+    Cities are placed uniformly at random. Each city keeps outgoing edges
+    only to its k = max(k_min, round(k_fraction * n)) nearest neighbors;
+    every other pair is unreachable and has no entry in the edge list.
+    The directed edges of a random Hamiltonian cycle are always added, so
+    at least one valid tour exists.
 
-    Returns (edges, n), where `edges` is a list of (from, to, distance)
-    tuples.
+    Args:
+        n: Number of cities.
+        k_fraction: Fraction of n kept as outgoing neighbors per city.
+        seed: Seed for the random number generators.
+        width: Width of the map.
+        height: Height of the map.
+        k_min: Minimum number of outgoing neighbors per city.
+
+    Returns:
+        An (edges, n) pair, where `edges` is a list of
+        (from, to, distance) tuples.
     """
 
     rng = np.random.default_rng(seed)
@@ -505,9 +618,8 @@ def generate_sparse_matrix(n, k_fraction, seed, width=1000, height=1000, k_min=2
         for j in order:
             edge_map[(i, int(j))] = float(dist[i, j])
 
-    # Guaranteed-feasible backbone: a random Hamiltonian cycle whose
-    # directed edges are always kept finite, regardless of k-NN
-    # membership, so a valid tour always exists by construction.
+    # Add the edges of a random Hamiltonian cycle so that a valid tour
+    # always exists
     cycle = list(range(n))
     py_rng = random.Random(seed)
     py_rng.shuffle(cycle)
@@ -524,21 +636,30 @@ def generate_sparse_matrix(n, k_fraction, seed, width=1000, height=1000, k_min=2
 
 def generate_barrier_matrix(n, k_fraction, seed, num_bridges, width=1000, height=1000, k_min=2):
     """
-    Build a directional reachability graph with a geographic barrier:
-    cities are split into two groups by a vertical line through the
-    middle of the map (like a river or mountain range). Within each
-    side, every city keeps outgoing edges to its k = max(k_min,
-    round(k_fraction * n)) nearest neighbours *on the same side* (same
-    sparsification rule as `generate_sparse_matrix`, so storage stays
-    comparably bounded). Crossing the barrier is only possible through
-    `num_bridges` specific city pairs, each connected bidirectionally at
-    their real distance -- every other cross-side pair is unreachable.
+    Build a directional reachability graph with a geographic barrier.
 
-    A random Hamiltonian cycle's directed edges are always force-kept on
-    top, guaranteeing at least one valid tour exists regardless of how
-    the barrier and sparsification fall.
+    Cities are placed uniformly at random and split into two sides by a
+    vertical line through the middle of the map. Within each side, every
+    city keeps outgoing edges to its k = max(k_min, round(k_fraction * n))
+    nearest neighbors on the same side. The sides are connected only by
+    `num_bridges` city pairs, each joined in both directions at its real
+    distance; every other cross-side pair is unreachable. The directed
+    edges of a random Hamiltonian cycle are always added, so at least one
+    valid tour exists.
 
-    Returns (edges, n).
+    Args:
+        n: Number of cities.
+        k_fraction: Fraction of n kept as same-side outgoing neighbors per
+            city.
+        seed: Seed for the random number generators.
+        num_bridges: Number of city pairs that cross the barrier.
+        width: Width of the map.
+        height: Height of the map.
+        k_min: Minimum number of outgoing neighbors per city.
+
+    Returns:
+        An (edges, n) pair, where `edges` is a list of
+        (from, to, distance) tuples.
     """
 
     rng = np.random.default_rng(seed)
@@ -550,7 +671,7 @@ def generate_barrier_matrix(n, k_fraction, seed, num_bridges, width=1000, height
     diff = coords[:, None, :] - coords[None, :, :]
     dist = np.sqrt((diff ** 2).sum(axis=-1))
 
-    side = coords[:, 0] < (width / 2)  # True = left side, False = right side
+    side = coords[:, 0] < (width / 2)  # True: left side, False: right side
 
     k = max(k_min, round(k_fraction * n))
 
@@ -584,7 +705,8 @@ def generate_barrier_matrix(n, k_fraction, seed, num_bridges, width=1000, height
             edge_map[(a, b)] = float(dist[a, b])
             edge_map[(b, a)] = float(dist[b, a])
 
-    # Guaranteed-feasible backbone, same safety net as generate_sparse_matrix.
+    # Add the edges of a random Hamiltonian cycle so that a valid tour
+    # always exists
     cycle = list(range(n))
     py_rng = random.Random(seed)
     py_rng.shuffle(cycle)
@@ -601,20 +723,25 @@ def generate_barrier_matrix(n, k_fraction, seed, num_bridges, width=1000, height
 
 def generate_random_drop_matrix(n, keep_probability, seed, width=1000, height=1000):
     """
-    Build a directional reachability graph by independently keeping each
-    ordered city pair (i, j) with probability `keep_probability` --
-    dropped otherwise, regardless of distance. Unlike
-    `generate_sparse_matrix` (keep the nearest) or `generate_barrier_matrix`
-    (keep the nearest, plus a geographic bottleneck), which edges survive
-    here has no relationship to distance at all -- the least physically
-    realistic of the three, but a useful contrast: does *structured*
-    sparsity (nearest-neighbour, barrier) matter to algorithm performance,
-    or does equally-sparse *unstructured* randomness behave the same way?
+    Build a directional reachability graph with randomly dropped edges.
 
-    A random Hamiltonian cycle's directed edges are always force-kept on
-    top, guaranteeing at least one valid tour exists.
+    Cities are placed uniformly at random. Each ordered pair (i, j) is
+    kept independently with probability `keep_probability` and dropped
+    otherwise, regardless of distance. In contrast to
+    `generate_sparse_matrix` and `generate_barrier_matrix`, which edges
+    survive is unrelated to geography. The directed edges of a random
+    Hamiltonian cycle are always added, so at least one valid tour exists.
 
-    Returns (edges, n).
+    Args:
+        n: Number of cities.
+        keep_probability: Probability that a directed edge is kept.
+        seed: Seed for the random number generators.
+        width: Width of the map.
+        height: Height of the map.
+
+    Returns:
+        An (edges, n) pair, where `edges` is a list of
+        (from, to, distance) tuples.
     """
 
     rng = np.random.default_rng(seed)
@@ -635,7 +762,8 @@ def generate_random_drop_matrix(n, keep_probability, seed, width=1000, height=10
     for i, j in zip(rows.tolist(), cols.tolist()):
         edge_map[(i, j)] = float(dist[i, j])
 
-    # Guaranteed-feasible backbone, same safety net as the other two.
+    # Add the edges of a random Hamiltonian cycle so that a valid tour
+    # always exists
     cycle = list(range(n))
     py_rng = random.Random(seed)
     py_rng.shuffle(cycle)
@@ -666,25 +794,49 @@ def generate_distance_matrix_dataset(
     sigma_divisor=6,
 ):
     """
-    Generate `total` sparse, directional distance-matrix instances spread
-    across `buckets` (same bucketed-normal size sampling as the Euclidean
-    dataset). Each instance is independently built using one of three
-    sparsification methods, chosen per-instance by `method_weights` (a
-    dict like {"knn": 1, "barrier": 1, "random_drop": 1}, weights need not
-    sum to 1):
+    Generate a dataset of sparse, directional distance-matrix instances.
 
-    - "knn": `generate_sparse_matrix` -- keep each city's k nearest
-      neighbours (k from `k_fraction`/`k_min`).
-    - "barrier": `generate_barrier_matrix` -- k-nearest-neighbour within
-      each side of a geographic split, plus `num_bridges` crossing points.
-    - "random_drop": `generate_random_drop_matrix` -- keep each directed
-      edge independently with probability `keep_probability`, unrelated
-      to distance.
+    Instances are split evenly across the size buckets, with sizes drawn
+    as in `generate_euclidean_dataset`. Each instance is built with one
+    of three sparsification methods, chosen per instance according to
+    `method_weights`:
 
-    Each instance is written as a CSV edge list (from,to,distance) plus a
-    JSON metadata sidecar to `out_dir`.
+    - "knn": `generate_sparse_matrix`, each city keeps its k nearest
+      neighbors.
+    - "barrier": `generate_barrier_matrix`, k-nearest-neighbor edges
+      within each side of a geographic split plus `num_bridges` crossings.
+    - "random_drop": `generate_random_drop_matrix`, each directed edge is
+      kept independently with probability `keep_probability`.
 
-    Returns a manifest: a list of dicts, one per generated instance.
+    Each instance is written to `out_dir` as a CSV edge list
+    (from,to,distance) and a JSON metadata file with the same name.
+
+    Args:
+        total: Number of instances to generate.
+        buckets: List of (low, high) size ranges.
+        seed: Seed for the dataset. Instance i uses seed + i.
+        out_dir: Output directory, created if missing.
+        max_total: Upper limit on `total`; a larger value raises
+            ValueError.
+        method_weights: Dict mapping method name to its relative weight,
+            e.g. {"knn": 1, "barrier": 1, "random_drop": 1}. The weights
+            do not need to sum to 1.
+        k_fraction: Fraction of n kept as outgoing neighbors per city
+            ("knn" and "barrier").
+        k_min: Minimum number of outgoing neighbors per city.
+        num_bridges: Number of barrier crossings ("barrier").
+        keep_probability: Probability that a directed edge is kept
+            ("random_drop").
+        width: Width of the map.
+        height: Height of the map.
+        sigma_divisor: Controls the spread of sizes within a bucket; see
+            `sample_bucket_size`.
+
+    Returns:
+        A manifest: a list of dicts, one per instance, with the keys
+        "name", "category", "structure", "bucket_index", "bucket_low",
+        "bucket_high", "n", "seed", "edge_count" and "file" (the CSV
+        path).
     """
 
     if total > max_total:
@@ -774,9 +926,16 @@ def generate_distance_matrix_dataset(
 
 def load_sparse_matrix(csv_path):
     """
-    Load a sparse distance-matrix instance saved by
-    `generate_distance_matrix_dataset` back into an (edges, n) pair,
-    where `n` is inferred as the highest city index seen, plus one.
+    Load a sparse distance-matrix instance from its CSV edge list.
+
+    Args:
+        csv_path: Path to a CSV file written by
+            `generate_distance_matrix_dataset`.
+
+    Returns:
+        An (edges, n) pair, where `edges` is a list of
+        (from, to, distance) tuples and `n` is the highest city index
+        that appears, plus one.
     """
 
     edges = []
@@ -796,9 +955,17 @@ def load_sparse_matrix(csv_path):
 
 def load_distance_matrix_manifest(out_dir):
     """
-    Reconstruct the manifest for a previously generated distance-matrix
-    dataset by reading each instance's JSON metadata sidecar, mirroring
-    `load_euclidean_manifest`.
+    Rebuild the manifest of a previously generated distance-matrix
+    dataset.
+
+    The manifest is read from the JSON metadata file of each instance.
+
+    Args:
+        out_dir: Directory containing the instance CSV and JSON files.
+
+    Returns:
+        A list of manifest dicts, in the same format as
+        `generate_distance_matrix_dataset`.
     """
 
     manifest = []

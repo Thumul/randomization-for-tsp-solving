@@ -11,11 +11,11 @@ from algorithms import (
 )
 from datasets import load_tsplib_solutions, load_euclidean_instance
 
-# Beyond this size, Held-Karp (O(n^2 * 2^n)) is no longer practical.
+# Largest instance size for which the exact Held-Karp optimum is computed
 EXACT_SOLVABLE_MAX_N = 13
 
-# Best-known tour lengths for every TSPLIB instance in data/tsplib/,
-# keyed by instance name (e.g. "berlin52"). Loaded once at import time.
+# Best-known tour lengths for the TSPLIB instances in data/tsplib/, keyed by
+# instance name (e.g. "berlin52")
 KNOWN_OPTIMAL_LENGTHS = load_tsplib_solutions()
 
 RANDOMIZED_VARIANTS = {
@@ -36,7 +36,16 @@ RANDOMIZED_VARIANTS = {
 
 def measure_algorithm(algorithm, cities, **kwargs):
     """
-    Measure execution time and tour length.
+    Run an algorithm once and record its wall-clock time.
+
+    Args:
+        algorithm: Callable taking a distance matrix (or cities) and
+            returning a (tour, length) pair.
+        cities: Input passed as the first argument to `algorithm`.
+        **kwargs: Additional keyword arguments forwarded to `algorithm`.
+
+    Returns:
+        A dict with the keys "tour", "length" and "time" (seconds).
     """
 
     start = time.perf_counter()
@@ -52,6 +61,16 @@ def measure_algorithm(algorithm, cities, **kwargs):
 
 
 def run_deterministic(distance_matrix):
+    """
+    Run deterministic Nearest Neighbor from city 0.
+
+    Args:
+        distance_matrix: n x n matrix of pairwise distances.
+
+    Returns:
+        A dict with the keys "tour", "length" and "time" (seconds).
+    """
+
     return measure_algorithm(
         nearest_neighbor,
         distance_matrix,
@@ -61,11 +80,18 @@ def run_deterministic(distance_matrix):
 
 def run_randomized(algorithm, cities, runs=30, seed_offset=0, **kwargs):
     """
-    Run a randomized algorithm `runs` times with independent seeds.
+    Run a randomized algorithm repeatedly with consecutive seeds.
 
-    Returns one record per run (not just summary stats) so the full
-    distribution of outcomes is preserved for variance analysis and
-    boxplots later.
+    Args:
+        algorithm: Randomized algorithm accepting a `seed` keyword.
+        cities: Input passed as the first argument to `algorithm`.
+        runs: Number of independent runs.
+        seed_offset: Seed of the first run; run i uses seed_offset + i.
+        **kwargs: Additional keyword arguments forwarded to `algorithm`.
+
+    Returns:
+        A list with one dict per run, holding "seed", "length" and
+        "time" (seconds).
     """
 
     records = []
@@ -91,7 +117,16 @@ def run_randomized(algorithm, cities, runs=30, seed_offset=0, **kwargs):
 
 def summarize(records):
     """
-    Reduce a list of {length, time} records to summary statistics.
+    Summarize a list of run records.
+
+    Args:
+        records: List of dicts with "length" and "time" keys, as
+            returned by `run_randomized`.
+
+    Returns:
+        A dict with best, worst, mean, median and standard deviation of
+        the tour length (standard deviation is 0.0 for a single record),
+        and the mean run time.
     """
 
     lengths = [r["length"] for r in records]
@@ -109,7 +144,19 @@ def summarize(records):
 
 def run_randomized_top_k(cities, k=3, runs=50):
     """
-    Convenience wrapper kept for the existing top-k-only workflow.
+    Run top-k randomized Nearest Neighbor repeatedly and summarize it.
+
+    The starting city is fixed at city 0, so the variation between runs
+    comes only from the randomized candidate choice.
+
+    Args:
+        cities: n x n matrix of pairwise distances.
+        k: Size of the candidate pool.
+        runs: Number of independent runs.
+
+    Returns:
+        The dict produced by `summarize`, extended with "best_tour", the
+        tour of the shortest run.
     """
 
     records = run_randomized(
@@ -134,16 +181,18 @@ def run_randomized_top_k(cities, k=3, runs=50):
 
 def euclidean_reference(row):
     """
-    Reference length for one Euclidean-category manifest row (as produced
-    by `datasets.load_euclidean_manifest`): the exact Held-Karp optimum,
-    if `n` is small enough to compute it -- otherwise None.
+    Reference tour length for a generated Euclidean instance.
 
-    Unlike TSPLIB, generated Euclidean instances have no externally
-    published optimum, so "no reference" is the honest answer once n
-    exceeds what Held-Karp can solve; it isn't filled in with a
-    single-algorithm's own tour length; a "best observed" reference
-    becomes meaningful once randomized variants contribute multiple
-    tours per instance.
+    The reference is the exact Held-Karp optimum, computed only when
+    `n <= EXACT_SOLVABLE_MAX_N`. Generated instances have no published
+    optimum, so larger instances have no reference.
+
+    Args:
+        row: Manifest row, as produced by `datasets.load_euclidean_manifest`.
+
+    Returns:
+        A (reference_length, "exact") pair, or None if the instance is
+        too large for the exact solver.
     """
 
     if row["n"] > EXACT_SOLVABLE_MAX_N:
@@ -157,9 +206,17 @@ def euclidean_reference(row):
 
 def tsplib_reference(row):
     """
-    Reference length for one TSPLIB manifest row: its published
-    best-known/optimal tour length, if this instance has one recorded
+    Reference tour length for a TSPLIB instance.
+
+    The reference is the published best-known or optimal length recorded
     in `data/tsplib/solutions.txt`.
+
+    Args:
+        row: TSPLIB manifest row with a "name" key.
+
+    Returns:
+        A (reference_length, "tsplib_optimal") pair, or None if the
+        instance has no recorded length.
     """
 
     if row["name"] not in KNOWN_OPTIMAL_LENGTHS:
@@ -170,24 +227,31 @@ def tsplib_reference(row):
 
 def run_nn_over_manifest(manifest, load_matrix, reference_fn=None, label="", progress_every=50):
     """
-    Run deterministic NN once per instance described in `manifest` (a
-    list of dicts as produced by the dataset manifest loaders/builders
-    in `datasets.py`).
+    Run deterministic Nearest Neighbor once on every instance in a
+    manifest.
 
-    `load_matrix(row)` loads that row's dense distance matrix -- how to
-    do so differs per dataset category (Euclidean coordinates vs. a
-    sparse directional edge list), so it's supplied by the caller rather
-    than hardcoded here, keeping this loop reusable across categories.
+    A run is marked infeasible when its tour uses a pair with no edge in
+    the original sparse graph, i.e. when its length is infinite. This can
+    only occur in the distance-matrix category.
 
-    `reference_fn(row)`, if given, returns (reference_length,
-    reference_type) or None when no reference is available for that
-    row; used to compute an approximation ratio where one is meaningful.
+    Args:
+        manifest: List of instance descriptors, as produced by the
+            manifest loaders in `datasets.py`. Each row needs the keys
+            "name", "category", "structure" and "n".
+        load_matrix: Callable taking a manifest row and returning its
+            dense n x n distance matrix.
+        reference_fn: Optional callable taking a manifest row and
+            returning a (reference_length, reference_type) pair, or None
+            when the row has no reference. It is used to compute the
+            approximation ratio of feasible runs.
+        label: Name shown in progress messages.
+        progress_every: Print progress after every this many instances;
+            0 or None disables progress output.
 
-    A run is marked infeasible when NN was forced to close the tour
-    using a pair with no edge in the original sparse graph (an infinite
-    entry in the dense matrix) -- this can only happen on the
-    distance-matrix category, and is itself one of the things the
-    dataset was built to expose.
+    Returns:
+        A list with one record per instance, holding the instance
+        metadata, "algorithm", "length", "time", "feasible",
+        "reference_length", "reference_type" and "approx_ratio".
     """
 
     records = []
@@ -240,16 +304,38 @@ def run_randomized_over_manifest(
     **algorithm_kwargs,
 ):
     """
-    Run a randomized NN variant `runs` times (independent seeds) per
-    instance in `manifest`, mirroring `run_nn_over_manifest` but keeping
-    every seeded run instead of collapsing to one result -- needed to
-    characterize the distribution of outcomes (mean/std/best/worst), per
-    the proposal's R=30-seed methodology, rather than just a single
-    value.
+    Run a randomized Nearest Neighbor variant repeatedly on every
+    instance in a manifest.
 
-    The reference length (if `reference_fn` is given) is computed once
-    per instance -- it doesn't depend on the seed -- and reused across
-    all of that instance's runs, rather than recomputed `runs` times.
+    Every seeded run is kept as its own record, so the distribution of
+    outcomes (mean, standard deviation, best, worst) can be analyzed. The
+    reference length does not depend on the seed and is computed once per
+    instance.
+
+    Args:
+        manifest: List of instance descriptors, as produced by the
+            manifest loaders in `datasets.py`. Each row needs the keys
+            "name", "category", "structure" and "n".
+        algorithm: Randomized algorithm accepting a `seed` keyword.
+        load_matrix: Callable taking a manifest row and returning its
+            dense n x n distance matrix.
+        algorithm_name: Label stored in the "algorithm" field of every
+            record.
+        runs: Number of independent seeds per instance.
+        reference_fn: Optional callable taking a manifest row and
+            returning a (reference_length, reference_type) pair, or None
+            when the row has no reference.
+        label: Name shown in progress messages.
+        progress_every: Print progress after every this many instances;
+            0 or None disables progress output.
+        **algorithm_kwargs: Additional keyword arguments forwarded to
+            `algorithm` (for example `k` or `random_start`).
+
+    Returns:
+        A list with one record per instance and seed, holding the
+        instance metadata, "algorithm", "seed", "length", "time",
+        "feasible", "reference_length", "reference_type" and
+        "approx_ratio".
     """
 
     records = []

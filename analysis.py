@@ -20,8 +20,18 @@ ALGORITHM_LABELS = {
 
 def run_and_save(runs=30, k=5, sizes=None, output_dir=RESULTS_DIR):
     """
-    Run the full experiment suite and save the raw per-run results
-    as a CSV so plots can be regenerated without rerunning everything.
+    Run the experiment suite and save the per-run results as a CSV.
+
+    Args:
+        runs: Number of independent seeds per randomized algorithm and
+            instance.
+        k: Candidate-pool size for the top-k randomized variant.
+        sizes: Instance sizes to evaluate, passed to the experiment
+            suite.
+        output_dir: Directory where `experiment_results.csv` is written.
+
+    Returns:
+        A DataFrame with one row per run.
     """
 
     os.makedirs(output_dir, exist_ok=True)
@@ -35,12 +45,29 @@ def run_and_save(runs=30, k=5, sizes=None, output_dir=RESULTS_DIR):
 
 
 def load_results(output_dir=RESULTS_DIR):
+    """
+    Load the per-run results CSV written by `run_and_save`.
+
+    Args:
+        output_dir: Directory containing `experiment_results.csv`.
+
+    Returns:
+        A DataFrame with one row per run.
+    """
+
     return pd.read_csv(os.path.join(output_dir, "experiment_results.csv"))
 
 
 def plot_approx_ratio_vs_n(df, structure="random", output_dir=RESULTS_DIR):
     """
-    Mean approximation ratio vs instance size n, one line per algorithm.
+    Plot mean approximation ratio against instance size, one line per
+    algorithm, and save it as `approx_ratio_vs_n_<structure>.png`.
+
+    Args:
+        df: Per-run results DataFrame.
+        structure: Instance structure to plot (value of the `structure`
+            column).
+        output_dir: Directory where the figure is saved.
     """
 
     subset = df[df["structure"] == structure]
@@ -69,7 +96,14 @@ def plot_approx_ratio_vs_n(df, structure="random", output_dir=RESULTS_DIR):
 
 def plot_runtime_vs_n(df, structure="random", output_dir=RESULTS_DIR):
     """
-    Mean runtime vs instance size n, one line per algorithm (log-log).
+    Plot mean runtime against instance size on log-log axes, one line per
+    algorithm, and save it as `runtime_vs_n_<structure>.png`.
+
+    Args:
+        df: Per-run results DataFrame.
+        structure: Instance structure to plot (value of the `structure`
+            column).
+        output_dir: Directory where the figure is saved.
     """
 
     subset = df[df["structure"] == structure]
@@ -100,9 +134,14 @@ def plot_runtime_vs_n(df, structure="random", output_dir=RESULTS_DIR):
 
 def plot_variance_boxplot(df, instance, output_dir=RESULTS_DIR):
     """
-    Boxplot of tour length distribution per randomized algorithm,
-    for one specific instance, with the deterministic NN length
-    drawn as a reference line.
+    Plot the tour-length distribution of each randomized algorithm on one
+    instance as boxplots, with the deterministic NN length as a reference
+    line, and save it as `variance_boxplot_<instance>.png`.
+
+    Args:
+        df: Per-run results DataFrame.
+        instance: Name of the instance to plot.
+        output_dir: Directory where the figure is saved.
     """
 
     subset = df[(df["instance"] == instance) & (df["algorithm"] != "deterministic_nn")]
@@ -138,6 +177,15 @@ def plot_variance_boxplot(df, instance, output_dir=RESULTS_DIR):
 
 
 def generate_all_plots(df, output_dir=RESULTS_DIR):
+    """
+    Generate the approximation-ratio and runtime plots for every instance
+    structure, and a variance boxplot for every instance.
+
+    Args:
+        df: Per-run results DataFrame.
+        output_dir: Directory where the figures are saved.
+    """
+
     os.makedirs(output_dir, exist_ok=True)
 
     for structure in df["structure"].unique():

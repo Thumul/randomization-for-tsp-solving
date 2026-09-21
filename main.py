@@ -25,8 +25,17 @@ FILE_PREFIX = "graph-"
 
 def run_randomized_trials(algorithm, distance_matrix, runs=500):
     """
-    Run a randomized algorithm multiple times and collect
-    statistical information.
+    Run a randomized algorithm repeatedly and summarize the results.
+
+    Args:
+        algorithm: Randomized algorithm accepting a `seed` keyword.
+        distance_matrix: n x n matrix of pairwise distances.
+        runs: Number of runs; run i uses seed i.
+
+    Returns:
+        A dict with the best, worst, mean and median tour length, the
+        standard deviation of the tour length, the mean run time, and
+        "best_tour", the tour of the shortest run.
     """
 
     results = [
@@ -53,11 +62,19 @@ def run_randomized_trials(algorithm, distance_matrix, runs=500):
 
 
 
-# Improvement calculation
 def calculate_improvement(deterministic_length, randomized_length):
     """
-    Calculate percentage improvement of randomized solution
-    compared with deterministic NN.
+    Compute the percentage by which a randomized tour is shorter than the
+    deterministic Nearest Neighbor tour.
+
+    Args:
+        deterministic_length: Tour length of deterministic NN.
+        randomized_length: Tour length of the randomized algorithm.
+
+    Returns:
+        (deterministic_length - randomized_length) / deterministic_length
+        as a percentage. The value is negative if the randomized tour is
+        longer.
     """
 
     return (
@@ -66,25 +83,30 @@ def calculate_improvement(deterministic_length, randomized_length):
 
 
 
-# Run one TSP instance
 def run_graph(filename):
     """
-    Run all algorithms on one TSP file.
+    Run deterministic NN and the three randomized variants on one TSP
+    file.
+
+    Args:
+        filename: Path to a TSPLIB file.
+
+    Returns:
+        A dict with the file name, the number of cities, the
+        deterministic tour length and time, and for each randomized
+        variant its best length, mean length, standard deviation and
+        improvement over deterministic NN.
     """
 
     data = load_tsplib(filename)
     distance_matrix = data["distance_matrix"]
 
-    # Deterministic NN
     deterministic = run_deterministic(distance_matrix)
 
-    # Random starting city
     randomized_start = run_randomized_trials(randomized_start_nearest_neighbor, distance_matrix, runs=RUNS)
 
-    # Top-k randomized NN
     randomized_top_k = run_randomized_top_k(distance_matrix, k=TOP_K, runs=RUNS)
 
-    # Distance weighted randomized NN
     randomized_weighted = run_randomized_trials(randomized_nearest_neighbor_weighted, distance_matrix, runs=RUNS)
 
     deterministic_length = deterministic["length"]
@@ -116,8 +138,14 @@ def run_graph(filename):
 
 
 
-# Print main results table
 def print_results_table(results):
+    """
+    Print the best tour length of each algorithm per graph, with the
+    percentage improvement over deterministic NN.
+
+    Args:
+        results: List of dicts returned by `run_graph`.
+    """
 
     print("\n")
     print("=" * 100)
@@ -157,8 +185,14 @@ def print_results_table(results):
 
 
 
-# Print mean results table
 def print_mean_table(results):
+    """
+    Print the mean tour length of each randomized algorithm per graph,
+    next to the deterministic NN length.
+
+    Args:
+        results: List of dicts returned by `run_graph`.
+    """
 
     print("\n")
     print("Mean randomized tour lengths")
@@ -188,8 +222,15 @@ def print_mean_table(results):
 
 
 
-# Overall analysis
 def print_overall_analysis(results):
+    """
+    Print how often each randomized variant beats deterministic NN, its
+    average improvement, and the variant with the highest average
+    improvement.
+
+    Args:
+        results: List of dicts returned by `run_graph`.
+    """
 
     print("\n")
     print("=" * 70)
@@ -198,8 +239,7 @@ def print_overall_analysis(results):
 
     number_of_graphs = len(results)
 
-
-    # Count wins
+    # Instances where the best randomized tour is shorter than deterministic NN
     start_wins = sum(
         1
         for result in results
@@ -222,7 +262,6 @@ def print_overall_analysis(results):
     )
 
 
-    # Average improvements
     average_start_improvement = statistics.mean(
         result["start_improvement"]
         for result in results
@@ -275,7 +314,6 @@ def print_overall_analysis(results):
         f"{average_weighted_improvement:.2f}%"
     )
 
-    # Best performing method overall
     variants = [
         (
             "Randomized starting city",
@@ -311,6 +349,11 @@ def print_overall_analysis(results):
 
 
 def main():
+    """
+    Run all algorithms on the configured TSP files and print the result
+    tables. Files that are missing or fail to process are reported and
+    skipped.
+    """
 
     all_results = []
 

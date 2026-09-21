@@ -7,9 +7,14 @@ import numpy as np
 
 def euclidean_distance(city1, city2):
     """
-    Calculate Euclidean distance between two cities
+    Compute the Euclidean distance between two cities.
 
-    city = (x, y)
+    Args:
+        city1: (x, y) coordinates of the first city.
+        city2: (x, y) coordinates of the second city.
+
+    Returns:
+        The straight-line distance as a float.
     """
     return math.sqrt(
         (city1[0] - city2[0]) ** 2 + (city1[1] - city2[1]) ** 2
@@ -18,12 +23,17 @@ def euclidean_distance(city1, city2):
 
 def create_distance_matrix(cities):
     """
-    Precompute distances between every pair of cities as a dense,
-    symmetric n x n matrix.
+    Build the dense, symmetric matrix of pairwise Euclidean distances.
 
-    Vectorized with numpy: a pure-Python nested loop is O(n^2) Python-level
-    iterations, which becomes the bottleneck at n in the thousands (the
-    dataset's largest bucket goes up to n=5000).
+    Distances are computed with vectorized numpy operations in O(n^2)
+    time and memory.
+
+    Args:
+        cities: Sequence of n (x, y) coordinate pairs.
+
+    Returns:
+        An n x n numpy array where entry [i][j] is the distance between
+        city i and city j.
     """
     coords = np.asarray(cities, dtype=float)
     diff = coords[:, None, :] - coords[None, :, :]
@@ -33,15 +43,21 @@ def create_distance_matrix(cities):
 
 def build_dense_matrix_from_edges(edges, n, missing_value=float("inf")):
     """
-    Expand a sparse, possibly directional (from, to, distance) edge list
-    -- as produced for the distance-matrix dataset category -- into a
-    dense n x n matrix, so it can be fed to the same NN/RNN implementations
-    used for Euclidean instances.
+    Expand a sparse, possibly directional edge list into a dense matrix.
 
-    Every pair with no edge gets `missing_value` (default: infinity, i.e.
-    "no route exists"). The diagonal is always 0. Since the source graph
-    can be directional, matrix[i][j] and matrix[j][i] are populated
-    independently and need not be equal.
+    The result can be passed to the same nearest-neighbor implementations
+    used for Euclidean instances. Entries [i][j] and [j][i] are populated
+    independently, so the matrix need not be symmetric. The diagonal is 0.
+
+    Args:
+        edges: Iterable of (from, to, distance) tuples, one per directed
+            edge that exists.
+        n: Number of cities.
+        missing_value: Value assigned to every pair with no edge. The
+            default, infinity, marks the pair as unreachable.
+
+    Returns:
+        An n x n numpy array of edge distances.
     """
     matrix = np.full((n, n), missing_value, dtype=float)
     np.fill_diagonal(matrix, 0.0)
@@ -54,7 +70,18 @@ def build_dense_matrix_from_edges(edges, n, missing_value=float("inf")):
 
 def calculate_tour_length(tour, distance_matrix):
     """
-    Calculate total tour distance.
+    Compute the total length of a closed tour.
+
+    The tour returns from its last city to its first, so the closing edge
+    is included.
+
+    Args:
+        tour: Ordered list of city indices visiting each city once.
+        distance_matrix: n x n matrix of pairwise distances.
+
+    Returns:
+        The sum of the edge distances along the closed tour. The result
+        is infinite if the tour uses an edge whose distance is infinite.
     """
     total_distance = 0.0
 
@@ -74,10 +101,19 @@ def calculate_tour_length(tour, distance_matrix):
 
 def held_karp(cities):
     """
-    Exact TSP solver using Held-Karp dynamic programming.
+    Solve TSP exactly with the Held-Karp dynamic program.
 
-    Runs in O(n^2 * 2^n) time, practical for n up to ~15.
-    Tour always starts at city 0.
+    The dynamic program stores, for every subset of cities and every
+    possible last city, the cheapest path from city 0 that visits exactly
+    that subset. Runs in O(n^2 * 2^n) time and O(n * 2^n) memory, which
+    limits it to roughly n <= 15.
+
+    Args:
+        cities: Sequence of n (x, y) coordinate pairs.
+
+    Returns:
+        A (tour, length) pair: the optimal tour as a list of city indices
+        starting at city 0, and its total length.
     """
 
     n = len(cities)
@@ -90,8 +126,8 @@ def held_karp(cities):
 
     distance_matrix = create_distance_matrix(cities)
 
-    # cost[(subset, last)] = (min cost to start at 0, visit exactly
-    # `subset`, and end at `last`; predecessor of `last` on that path)
+    # cost[(subset, last)] = (minimum cost of a path that starts at 0,
+    # visits exactly `subset` and ends at `last`, predecessor of `last`)
     cost = {}
 
     for k in range(1, n):
@@ -121,7 +157,7 @@ def held_karp(cities):
         for k in range(1, n)
     )
 
-    # Reconstruct the tour by walking predecessors backward
+    # Reconstruct the tour by following predecessors backward
     tour = []
     subset = full_set
     last = best_last
@@ -145,16 +181,26 @@ def held_karp(cities):
 
 def nearest_neighbor(distance_matrix, start_city=0):
     """
-    Deterministic Nearest Neighbor TSP heuristic.
-    At each step, select the closest unvisited city.
+    Deterministic Nearest Neighbor heuristic.
 
-    On a complete graph this always finds one. On a sparse/directional
-    graph (missing pairs represented as float("inf")), the current city
-    can have no reachable unvisited city left -- in that case the tour
-    is forced to continue to the first unvisited city in index order so
-    it still completes as a valid permutation. The resulting tour length
-    then includes an infinite edge, which is how callers detect that the
-    tour is infeasible in the original sparse graph.
+    Starting from `start_city`, repeatedly moves to the closest unvisited
+    city until every city has been visited, then closes the tour. Runs in
+    O(n^2) time.
+
+    On a sparse or directional graph, where unreachable pairs are stored
+    as float("inf"), the current city can have no reachable unvisited
+    city. The tour then continues to the first unvisited city in index
+    order so that it remains a valid permutation. Its length includes an
+    infinite edge, which marks the tour as infeasible in the original
+    graph.
+
+    Args:
+        distance_matrix: n x n matrix of pairwise distances.
+        start_city: Index of the city where the tour begins.
+
+    Returns:
+        A (tour, length) pair: the visiting order as a list of city
+        indices, and the closed tour length.
     """
 
     n = len(distance_matrix)
@@ -217,11 +263,24 @@ def randomized_nearest_neighbor_top_k(
     random_start=True
 ):
     """
-    Randomized Nearest Neighbor.
+    Top-k Randomized Nearest Neighbor heuristic.
 
-    Instead of always selecting the closest city,
-    randomly select one city from the k nearest
-    unvisited cities.
+    At each step, chooses uniformly at random among the k closest
+    unvisited cities instead of always taking the closest one. With k=1
+    and random_start=False the behavior matches deterministic Nearest
+    Neighbor.
+
+    Args:
+        distance_matrix: n x n matrix of pairwise distances.
+        k: Size of the candidate pool. If fewer than k unvisited cities
+            remain, all of them are candidates.
+        seed: Seed for the random number generator, for reproducibility.
+        random_start: If True, the starting city is drawn uniformly at
+            random; otherwise the tour starts at city 0.
+
+    Returns:
+        A (tour, length) pair: the visiting order as a list of city
+        indices, and the closed tour length.
     """
 
     rng = random.Random(seed)
@@ -250,13 +309,10 @@ def randomized_nearest_neighbor_top_k(
                     (distance_matrix[current_city][city], city)
                 )
 
-        # Sort cities according to distance
         candidates.sort(key=lambda x: x[0])
 
-        # Select the k closest candidates
         top_k = candidates[:min(k, len(candidates))]
 
-        # Randomly choose from them
         _, next_city = rng.choice(top_k)
 
         tour.append(next_city)
@@ -279,8 +335,18 @@ def randomized_nearest_neighbor_top_k(
 
 def randomized_start_nearest_neighbor(distance_matrix, seed=None):
     """
-    Standard nearest neighbor but with a randomly selected
-    starting city.
+    Randomized-start Nearest Neighbor heuristic.
+
+    Runs deterministic Nearest Neighbor from a starting city drawn
+    uniformly at random. Every subsequent step is greedy.
+
+    Args:
+        distance_matrix: n x n matrix of pairwise distances.
+        seed: Seed for the random number generator, for reproducibility.
+
+    Returns:
+        A (tour, length) pair: the visiting order as a list of city
+        indices, and the closed tour length.
     """
 
     rng = random.Random(seed)
@@ -304,39 +370,43 @@ def randomized_nearest_neighbor_weighted(
     random_start=False
 ):
     """
-    Distance-Weighted Randomized Nearest Neighbor.
+    Distance-weighted Randomized Nearest Neighbor heuristic.
 
-    At each step, an unvisited reachable city is selected randomly.
-    Closer cities receive higher probability.
+    At each step, selects the next city at random from the reachable
+    unvisited cities, with closer cities more likely to be chosen. The
+    weight of candidate i is
 
-    Weight:
         w_i = d_min / d_i
 
-    where:
-        d_i   = distance to candidate city i
-        d_min = minimum distance among the current candidates
+    where d_i is the distance to candidate i and d_min is the smallest
+    distance among the current candidates, so the closest candidate has
+    weight 1. The selection probability is w_i divided by the sum of the
+    weights. Normalizing by d_min avoids the scale dependence of 1 / d_i.
 
-    This relative weighting is numerically more stable than directly
-    using 1 / d_i.
+    Edges with infinite distance are treated as unavailable and are
+    excluded from the candidates. If the walk reaches a city with no
+    reachable unvisited city, or cannot return to the start, the run is
+    infeasible and the returned length is infinity.
 
-    Infinite distances represent unavailable edges and are excluded.
-    If the algorithm reaches a city from which no unvisited city is
-    reachable, the run is considered infeasible and returns infinity.
+    Args:
+        distance_matrix: n x n matrix of pairwise distances.
+        seed: Seed for the random number generator, for reproducibility.
+        random_start: If True, the starting city is drawn uniformly at
+            random; otherwise the tour starts at city 0.
+
+    Returns:
+        A (tour, length) pair: the visiting order as a list of city
+        indices (partial if the run is infeasible), and the closed tour
+        length, which is infinity for an infeasible run.
     """
 
     rng = random.Random(seed)
 
     n = len(distance_matrix)
 
-    # ---------------------------------------------------------
-    # Handle empty input
-    # ---------------------------------------------------------
     if n == 0:
         return [], 0.0
 
-    # ---------------------------------------------------------
-    # Choose starting city
-    # ---------------------------------------------------------
     if random_start:
         current = rng.randrange(n)
     else:
@@ -349,13 +419,9 @@ def randomized_nearest_neighbor_weighted(
 
     total_length = 0.0
 
-    # ---------------------------------------------------------
-    # Construct the tour
-    # ---------------------------------------------------------
     while len(tour) < n:
 
-        # Find all unvisited cities that are reachable from
-        # the current city.
+        # Unvisited cities reachable from the current city
         candidates = [
             city
             for city in range(n)
@@ -364,14 +430,9 @@ def randomized_nearest_neighbor_weighted(
             and distance_matrix[current][city] >= 0
         ]
 
-        # No reachable unvisited city.
-        # Therefore this run cannot construct a complete tour.
+        # Dead end: no complete tour can be built from here
         if not candidates:
             return tour, float("inf")
-
-        # -----------------------------------------------------
-        # Calculate distance-weighted probabilities
-        # -----------------------------------------------------
 
         distances = [
             distance_matrix[current][city]
@@ -380,30 +441,18 @@ def randomized_nearest_neighbor_weighted(
 
         min_distance = min(distances)
 
-        # Construct weights.
-        #
-        # Closest city:
-        #     weight = min_distance / min_distance = 1
-        #
-        # Further cities:
-        #     weight < 1
-        #
-        # Therefore closer cities have higher probability.
         weights = []
 
         for distance in distances:
 
-            # Handle zero distance safely.
+            # A zero distance would divide by zero; treat it as the
+            # highest-priority candidate.
             if distance == 0:
                 weight = 1.0
             else:
                 weight = min_distance / distance
 
             weights.append(weight)
-
-        # -----------------------------------------------------
-        # Validate weights
-        # -----------------------------------------------------
 
         total_weight = sum(weights)
 
@@ -414,32 +463,22 @@ def randomized_nearest_neighbor_weighted(
         ):
             return tour, float("inf")
 
-        # -----------------------------------------------------
-        # Randomly select next city according to weights
-        # -----------------------------------------------------
-
         next_city = rng.choices(
             candidates,
             weights=weights,
             k=1
         )[0]
 
-        # Add edge length
         total_length += distance_matrix[current][next_city]
 
-        # Update tour
         tour.append(next_city)
         visited[next_city] = True
 
         current = next_city
 
-    # ---------------------------------------------------------
-    # Return to starting city
-    # ---------------------------------------------------------
-
+    # Close the cycle by returning to the starting city
     return_edge = distance_matrix[current][tour[0]]
 
-    # Cannot complete the TSP cycle
     if not math.isfinite(return_edge):
         return tour, float("inf")
 
